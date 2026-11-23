@@ -1,5 +1,6 @@
 // screens/settings_screen.dart
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/photo_storage_service.dart';
 
@@ -18,11 +19,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _imageCompression = true;
   bool _notifications = true;
   bool _darkMode = false;
+  String _appVersion = '';
 
   @override
   void initState() {
     super.initState();
     _loadSettings();
+    PackageInfo.fromPlatform().then((info) {
+      if (mounted) setState(() => _appVersion = '${info.version} (${info.buildNumber})');
+    }).catchError((_) {});
   }
 
   @override
@@ -166,27 +171,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     _buildSettingsSection(
                       'Dados',
                       [
-                        _buildActionItem(
-                          'Limpar Cache',
-                          'Remover dados temporários',
-                          Icons.cleaning_services,
-                          () => _clearCache(),
-                        ),
-                        _buildActionItem(
-                          'Exportar Dados',
-                          'Salvar dados locais',
-                          Icons.download,
-                          () => _exportData(),
-                        ),
-                        _buildActionItem(
-                          'Forçar Sincronização',
-                          'Tentar sincronizar todos os dados',
-                          Icons.sync,
-                          () => _forceSync(),
-                        ),
+                        // "Limpar Cache", "Exportar Dados" e "Forçar
+                        // Sincronização" saíram: só mostravam um aviso, sem
+                        // fazer nada. A sincronização é feita pela tela inicial.
                         _buildActionItem(
                           'Reenviar Fotos',
-                          'Forçar upload de fotos pendentes para FTP',
+                          'Enviar de novo ao servidor as fotos que ficaram no aparelho',
                           Icons.cloud_upload,
                           () => _forcePhotoUpload(),
                         ),
@@ -198,9 +188,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     _buildSettingsSection(
                       'Sobre',
                       [
-                        _buildInfoItem('Versão do App', '1.0.0'),
-                        _buildInfoItem('Banco de Dados', 'v2.1'),
-                        _buildInfoItem('Última Sincronização', 'Agora'),
+                        // Versão real do app (a mesma da tela inicial); antes
+                        // era o texto fixo "1.0.0", e "Banco de Dados v2.1" e
+                        // "Última Sincronização: Agora" eram valores inventados.
+                        _buildInfoItem('Versão do App',
+                            _appVersion.isEmpty ? '...' : _appVersion),
                         _buildActionItem(
                           'Política de Privacidade',
                           'Ver termos e condições',
@@ -472,47 +464,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _clearCache() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Limpar Cache'),
-        content: const Text('Isso removerá todos os dados temporários. Continuar?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Cache limpo com sucesso')),
-              );
-            },
-            child: const Text('Limpar'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _exportData() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Funcionalidade de exportação em desenvolvimento'),
-      ),
-    );
-  }
-
-  void _forceSync() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Sincronização iniciada em segundo plano'),
-      ),
-    );
-  }
-
   Future<void> _forcePhotoUpload() async {
     try {
       // Mostrar dialog de confirmação
@@ -521,7 +472,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         builder: (context) => AlertDialog(
           title: const Text('Reenviar Fotos'),
           content: const Text(
-            'Isso irá buscar TODAS as fotos salvas localmente e tentar enviá-las novamente para o servidor FTP.\n\n'
+            'Isso irá buscar TODAS as fotos salvas localmente e tentar enviá-las novamente para o servidor.\n\n'
             'Certifique-se de estar conectado à internet.\n\n'
             'Continuar?',
           ),

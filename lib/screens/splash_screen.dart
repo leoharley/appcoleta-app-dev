@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/foundation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/auth_provider.dart';
 import '../services/pwa_install/pwa_install.dart';
 import 'login_screen.dart';
@@ -72,16 +73,27 @@ class _SplashScreenState extends State<SplashScreen> {
     }
   }
 
-  void _navigateToNextScreen(bool isAuthenticated) {
+  Future<void> _navigateToNextScreen(bool isAuthenticated) async {
     if (!mounted) return;
 
     // No navegador do celular o acesso é barrado na LoginScreen, que explica o
     // motivo e oferece a instalação. Uma sessão salva pularia essa tela e
     // entraria direto no dashboard, furando a regra — por isso mandamos para o
-    // login mesmo autenticado.
+    // login mesmo autenticado. Exceção: Android em que o aplicador escolheu
+    // "Continuar pelo navegador" porque o celular não oferece instalar
+    // (LoginScreen._semOpcaoDeInstalar).
+    var continuarNoNavegador = false;
+    if (PwaInstall.disponivelNaPlataforma && !PwaInstall.ehIos) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        continuarNoNavegador = prefs.getBool('pwa_continuar_navegador') ?? false;
+      } catch (_) {}
+    }
+    if (!mounted) return;
     final bloqueadoNoNavegador = PwaInstall.disponivelNaPlataforma &&
         PwaInstall.ehCelular &&
-        !PwaInstall.emModoApp;
+        !PwaInstall.emModoApp &&
+        !continuarNoNavegador;
 
     final irParaDashboard = isAuthenticated && !bloqueadoNoNavegador;
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/auth_provider.dart';
 import '../services/pwa_install/pwa_install.dart';
 import 'dashboard_screen.dart';
@@ -16,8 +17,13 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _codeController = TextEditingController();
   bool _obscurePassword = true;
   String _appVersion = '';
+
+  /// Supervisor/administrador: depois da senha, o servidor pede o código do
+  /// aplicativo autenticador (verificação em duas etapas).
+  bool _precisaCodigo = false;
 
   /// True depois que o aplicador leu as instruções de instalação do iPhone.
   ///
@@ -27,16 +33,93 @@ class _LoginScreenState extends State<LoginScreen> {
   /// instalar, enquanto o Android mostra a confirmação.
   bool _seguiuInstrucoesIos = false;
 
+  /// Android em que o Chrome não oferece instalar (o menu não tem "Instalar
+  /// app" nem "Adicionar à tela inicial": launcher sem atalhos fixados,
+  /// aparelho sem Google Play etc.). Lá o armazenamento é o mesmo do app
+  /// instalado, então seguir pelo navegador não perde nada — a trava só
+  /// deixava a pessoa sem entrar. A escolha fica gravada no aparelho.
+  static const _prefContinuarNavegador = 'pwa_continuar_navegador';
+  bool _continuarNoNavegador = false;
+
   @override
   void initState() {
     super.initState();
     _loadAppVersion();
+    _carregarEscolhaNavegador();
 
     // O 'beforeinstallprompt' costuma chegar depois desta tela já estar
     // construída; sem o callback, o botão só apareceria na próxima navegação.
     if (PwaInstall.disponivelNaPlataforma) {
       PwaInstall.registrarCallback(() {
         if (mounted) setState(() {});
+      });
+    }
+  }
+
+  Future<void> _carregarEscolhaNavegador() async {
+    if (!PwaInstall.disponivelNaPlataforma || PwaInstall.ehIos) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final escolheu = prefs.getBool(_prefContinuarNavegador) ?? false;
+      if (escolheu && mounted) {
+        setState(() {
+          _continuarNoNavegador = true;
+        });
+      }
+    } catch (_) {
+      // Sem acesso ao armazenamento: segue com a tela de instalação.
+    }
+  }
+
+  /// Saída para o Android sem opção de instalar: explica o que conferir e,
+  /// se mesmo assim não houver a opção, libera o login no navegador.
+  Future<void> _semOpcaoDeInstalar() async {
+    final continuar = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Não aparece a opção de instalar?'),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Antes, confira:'),
+            SizedBox(height: 8),
+            Text('• O endereço está aberto no Google Chrome (não no navegador do '
+                'WhatsApp nem em aba anônima).'),
+            SizedBox(height: 6),
+            Text('• No menu do Chrome (três pontinhos), procure "Instalar app" '
+                'ou "Adicionar à tela inicial".'),
+            SizedBox(height: 6),
+            Text('• Veja se o app Alves Lima já não está na lista de aplicativos do '
+                'celular.'),
+            SizedBox(height: 12),
+            Text('Se nada disso resolver, você pode usar pelo navegador. Seus '
+                'dados ficam guardados do mesmo jeito; use sempre o Chrome e '
+                'este mesmo endereço.'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Voltar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Continuar pelo navegador'),
+          ),
+        ],
+      ),
+    );
+    if (continuar != true || !mounted) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_prefContinuarNavegador, true);
+    } catch (_) {
+      // Não gravou: vale só para esta abertura.
+    }
+    if (mounted) {
+      setState(() {
+        _continuarNoNavegador = true;
       });
     }
   }
@@ -92,7 +175,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     children: [
                       const SizedBox(height: 15),
                       const Text(
-                        'Bem-vindo ao AppColeta',
+                        'Bem-vindo',
                         style: TextStyle(
                           fontSize: 28,
                           fontWeight: FontWeight.bold,
@@ -156,8 +239,30 @@ class _LoginScreenState extends State<LoginScreen> {
                           return null;
                         },
                       ),
+                      if (_precisaCodigo) ...[
+                        const SizedBox(height: 20),
+                        TextFormField(
+                          controller: _codeController,
+                          keyboardType: TextInputType.number,
+                          autofocus: true,
+                          maxLength: 9,
+                          decoration: const InputDecoration(
+                            labelText: 'Código de verificação',
+                            hintText: '6 números do aplicativo autenticador',
+                            prefixIcon: Icon(Icons.verified_user),
+                            counterText: '',
+                          ),
+                          validator: (value) {
+                            if (_precisaCodigo &&
+                                (value == null || value.trim().isEmpty)) {
+                              return 'Digite o código do aplicativo autenticador';
+                            }
+                            return null;
+                          },
+                        ),
+                      ],
                       const SizedBox(height: 30),
-                      
+
                       // Login Button
                       Consumer<AuthProvider>(
                         builder: (context, authProvider, child) {
@@ -223,7 +328,8 @@ class _LoginScreenState extends State<LoginScreen> {
   bool get _exigeInstalacao =>
       PwaInstall.disponivelNaPlataforma &&
       PwaInstall.ehCelular &&
-      !PwaInstall.emModoApp;
+      !PwaInstall.emModoApp &&
+      !_continuarNoNavegador;
 
   /// Substitui o formulário de login quando o app está sendo aberto pelo
   /// navegador do celular. Mostra como instalar e como abrir depois, no mesmo
@@ -300,6 +406,18 @@ class _LoginScreenState extends State<LoginScreen> {
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
+                ),
+              ),
+            ),
+          if (!jaInstalou && !PwaInstall.ehIos)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: TextButton(
+                onPressed: _semOpcaoDeInstalar,
+                child: const Text(
+                  'A opção de instalar não aparece no meu celular',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(decoration: TextDecoration.underline),
                 ),
               ),
             ),
@@ -407,7 +525,7 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
         const SizedBox(height: 5),
         const Text(
-          'App\nColeta',
+          'Alves\nLima',
           style: TextStyle(
             fontSize: 10,
             height: 1.15,
@@ -566,31 +684,136 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _login() async {
-    if (_formKey.currentState!.validate()) {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      
-      try {
-        // Usar o método login do AuthProvider
-        final success = await authProvider.login(
-          _usernameController.text.trim(),
-          _passwordController.text.trim(),
+    if (!_formKey.currentState!.validate()) return;
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final usuario = _usernameController.text.trim();
+    final senha = _passwordController.text.trim();
+
+    final resultado = await authProvider.login(usuario, senha,
+        code: _precisaCodigo ? _codeController.text.trim() : null);
+    if (!mounted) return;
+    final mensagem = authProvider.loginMensagem;
+
+    switch (resultado) {
+      case LoginResultado.sucesso:
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const DashboardScreen()),
         );
-        
-        if (success && mounted) {
-          // Login bem-sucedido - navegar para dashboard
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => const DashboardScreen()),
-          );
-        } else if (mounted) {
-          // Login falhou
-          _showError('Usuário ou senha inválidos');
+      case LoginResultado.codigoNecessario:
+        setState(() => _precisaCodigo = true);
+      case LoginResultado.codigoInvalido:
+        _codeController.clear();
+        _showError(mensagem ?? 'Código inválido ou já usado.');
+      case LoginResultado.trocaDeSenha:
+        final trocou = await _trocarSenha(usuario, senha);
+        if (trocou && mounted) {
+          _passwordController.clear();
+          _showInfo('Senha alterada. Entre com a nova senha.');
         }
-      } catch (e) {
-        if (mounted) {
-          _showError('Erro ao fazer login: $e');
-        }
-      }
+      case LoginResultado.ativarVerificacao:
+        _showError(mensagem ??
+            'Ative a verificação em duas etapas entrando primeiro no painel pelo computador.');
+      case LoginResultado.bloqueado:
+      case LoginResultado.semConexao:
+      case LoginResultado.credenciaisInvalidas:
+      case LoginResultado.erro:
+        _showError(mensagem ?? 'Não foi possível entrar.');
+    }
+  }
+
+  /// Troca de senha obrigatória (por segurança, as senhas antigas ficavam
+  /// guardadas no aparelho). Devolve true quando a nova senha foi gravada.
+  Future<bool> _trocarSenha(String usuario, String senhaAtual) async {
+    final nova = TextEditingController();
+    final repete = TextEditingController();
+    String? erro;
+    bool salvando = false;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialog) => AlertDialog(
+          title: const Text('Crie uma nova senha'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Por segurança, é preciso trocar a senha antes de '
+                    'continuar. Use pelo menos 8 caracteres, com letras e números.'),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: nova,
+                  obscureText: true,
+                  decoration: const InputDecoration(labelText: 'Nova senha'),
+                ),
+                TextField(
+                  controller: repete,
+                  obscureText: true,
+                  decoration:
+                      const InputDecoration(labelText: 'Repita a nova senha'),
+                ),
+                if (erro != null) ...[
+                  const SizedBox(height: 10),
+                  Text(erro!, style: const TextStyle(color: Colors.red)),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed:
+                  salvando ? null : () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: salvando
+                  ? null
+                  : () async {
+                      if (nova.text != repete.text) {
+                        setDialog(() => erro = 'As duas senhas não são iguais.');
+                        return;
+                      }
+                      setDialog(() {
+                        salvando = true;
+                        erro = null;
+                      });
+                      final problema = await Provider.of<AuthProvider>(context,
+                              listen: false)
+                          .trocarSenha(usuario, senhaAtual, nova.text);
+                      if (problema == null) {
+                        if (dialogContext.mounted) {
+                          Navigator.of(dialogContext).pop(true);
+                        }
+                      } else {
+                        setDialog(() {
+                          salvando = false;
+                          erro = problema;
+                        });
+                      }
+                    },
+              child: Text(salvando ? 'Salvando...' : 'Salvar'),
+            ),
+          ],
+        ),
+      ),
+    );
+    nova.dispose();
+    repete.dispose();
+    return ok == true;
+  }
+
+  void _showInfo(String message) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: const Color(0xFF2E7D32),
+          duration: const Duration(seconds: 4),
+        ),
+      );
     }
   }
 
@@ -610,6 +833,7 @@ class _LoginScreenState extends State<LoginScreen> {
   void dispose() {
     _usernameController.dispose();
     _passwordController.dispose();
+    _codeController.dispose();
     super.dispose();
   }
 }

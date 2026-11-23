@@ -43,7 +43,7 @@
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />
 
     <application
-        android:label="AppColeta"
+        android:label="Alves Lima"
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon">
         <activity

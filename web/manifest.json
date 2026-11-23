@@ -1,6 +1,6 @@
 {
-    "name": "App Coleta - Instituto Alves Lima",
-    "short_name": "App Coleta",
+    "name": "Coleta - Instituto Alves Lima",
+    "short_name": "Alves Lima",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#F5F5F5",

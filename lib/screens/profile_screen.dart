@@ -272,12 +272,19 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
-  _logout(BuildContext context) {
+  Future<void> _logout(BuildContext context) async {
+    final pendentes = await Provider.of<AuthProvider>(context, listen: false)
+        .coletasPendentesDoUsuario();
+    if (!context.mounted) return;
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Confirmar Logout'),
-        content: const Text('Tem certeza que deseja sair do aplicativo?'),
+        title: const Text('Sair do aplicativo'),
+        content: Text(pendentes > 0
+            ? 'Você tem $pendentes ${pendentes == 1 ? 'entrevista que ainda não foi enviada' : 'entrevistas que ainda não foram enviadas'}. '
+                'Elas ficam guardadas neste aparelho e só são enviadas quando você entrar de novo, com internet. '
+                'O ideal é sincronizar antes de sair.\n\nPara entrar de novo é preciso internet.'
+            : 'Para entrar de novo é preciso internet. Deseja sair?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),

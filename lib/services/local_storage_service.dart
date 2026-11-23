@@ -605,6 +605,30 @@ class LocalStorageService {
     }
   }
 
+  /// Ao sair: apaga do aparelho as coletas JÁ confirmadas pelo painel (o
+  /// próximo usuário do aparelho não vê as entrevistas do anterior). As que
+  /// ainda não subiram ficam: só saem depois que o servidor confirmar.
+  /// Devolve quantas foram apagadas.
+  static Future<int> removeSyncedFormResponses() => _withFormsLock(() async {
+        final forms = await getFormResponses();
+        final keep = forms.where((f) => f.syncStatus != 'synced').toList();
+        final removed = forms.length - keep.length;
+        if (removed > 0) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString(
+              _formsKey, jsonEncode(keep.map((f) => f.toJson()).toList()));
+        }
+        return removed;
+      });
+
+  /// Coletas ainda não enviadas de um aplicador (para avisar antes de sair).
+  static Future<int> countPendingFormsOf(int userId) async {
+    final forms = await getFormResponses();
+    return forms
+        .where((f) => f.syncStatus != 'synced' && f.appliedBy == userId)
+        .length;
+  }
+
   static Future<void> clearFormResponses() async {
     try {
       print('🧹 === LIMPANDO FORMULÁRIOS DO STORAGE ===');

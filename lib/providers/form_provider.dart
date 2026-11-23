@@ -1554,6 +1554,21 @@ class FormProvider with ChangeNotifier {
       try {
         pendingForms = await getPendingForms();
         print('📋 ${pendingForms.length} formulários pendentes encontrados');
+
+        // Só as coletas de quem está logado: o servidor registra como
+        // aplicador o dono do token, então a coleta de outro aplicador que
+        // usou este aparelho espera o dono entrar de novo (não muda de autor).
+        final prefs = await SharedPreferences.getInstance();
+        final usuarioAtual = prefs.getInt('user_id');
+        final deOutros = pendingForms
+            .where((f) => usuarioAtual == null || f.appliedBy != usuarioAtual)
+            .length;
+        if (deOutros > 0) {
+          pendingForms = pendingForms
+              .where((f) => usuarioAtual != null && f.appliedBy == usuarioAtual)
+              .toList();
+          print('⏸️ $deOutros coleta(s) de outro aplicador aguardando o dono entrar');
+        }
       } catch (e, stackTrace) {
         print('❌ ERRO CRÍTICO ao buscar formulários pendentes: $e');
         print('📋 Stack trace: $stackTrace');

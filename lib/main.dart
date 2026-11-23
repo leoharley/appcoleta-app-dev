@@ -1,4 +1,5 @@
 // main.dart
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/foundation.dart';
@@ -15,6 +16,19 @@ import '../providers/question_analysis_provider.dart';
 import 'providers/stratification_provider.dart';
 
 void main() {
+  // Na versão publicada, as mensagens de diagnóstico (print) não vão para o
+  // console do navegador: várias mostravam o conteúdo das entrevistas, nomes,
+  // caminhos de arquivo e trechos do token. Em modo de desenvolvimento seguem.
+  if (kReleaseMode) {
+    runZoned(_main, zoneSpecification: ZoneSpecification(
+      print: (self, parent, zone, line) {},
+    ));
+  } else {
+    _main();
+  }
+}
+
+void _main() {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Teto do cache de imagens. O padrão do Flutter (1000 imagens / 100 MB)
@@ -59,7 +73,7 @@ class AppColetaApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => StratificationProvider()),
       ],
       child: MaterialApp(
-        title: 'AppColeta',
+        title: 'Instituto Alves Lima',
         theme: AppTheme.lightTheme,
         locale: const Locale('pt', 'BR'),
         localizationsDelegates: const [

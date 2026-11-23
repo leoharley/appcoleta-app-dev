@@ -8,7 +8,12 @@ import '../models/form_response.dart';
 import '../models/stratification.dart';
 
 class ApiService {
-  static const String baseUrl = 'https://institutoalveslima.com.br/painel/api';
+  // Padrão = produção. Para o ambiente de evoluções (VPS), compilar com:
+  //   --dart-define=API_BASE_URL=https://painel.institutoalveslima.online/api
+  static const String baseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'https://institutoalveslima.com.br/painel/api',
+  );
   //static const String baseUrl = 'http://localhost/painel_sxdata/api';
 
   static Future<Map<String, String>> _getHeaders() async {
@@ -22,28 +27,65 @@ class ApiService {
     };
   }
 
+  /// Login. Devolve o corpo da resposta com `statusCode` incluído — o servidor
+  /// respondeu, mesmo que seja recusa (senha errada, código de duas etapas,
+  /// troca de senha, bloqueio). Só lança [SemConexaoException] quando o
+  /// servidor NÃO respondeu: antes qualquer recusa virava "erro de conexão".
   static Future<Map<String, dynamic>> login(
     String username,
+    String password, {
+    String? code,
+  }) async {
+    return _postAuth('$baseUrl/auth/login', {
+      'username': username,
+      'password': password,
+      if (code != null && code.isNotEmpty) 'code': code,
+    });
+  }
+
+  /// Troca de senha obrigatória (o servidor confere a senha atual).
+  static Future<Map<String, dynamic>> changePassword(
+    String username,
     String password,
+    String newPassword,
   ) async {
+    return _postAuth('$baseUrl/auth/change_password', {
+      'username': username,
+      'password': password,
+      'new_password': newPassword,
+    });
+  }
+
+  static Future<Map<String, dynamic>> _postAuth(
+      String url, Map<String, dynamic> body) async {
+    http.Response response;
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/auth/login'),
-        headers: await _getHeaders(),
-        body: jsonEncode({'username': username, 'password': password}),
-      );
-
-      final responseData = jsonDecode(response.body);
-
-      // Verificar o status code da resposta HTTP
-      if (response.statusCode == 200) {
-        return responseData;
-      } else {
-        throw Exception(responseData['message'] ?? 'Login failed');
-      }
+      response = await http
+          .post(
+            Uri.parse(url),
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: jsonEncode(body),
+          )
+          .timeout(const Duration(seconds: 30));
     } catch (e) {
-      throw Exception('Connection error: $e');
+      throw SemConexaoException('$e');
     }
+    Map<String, dynamic> data;
+    try {
+      final decoded = jsonDecode(response.body);
+      data = decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
+    } catch (_) {
+      data = <String, dynamic>{
+        'success': false,
+        'message':
+            'Resposta inesperada do servidor (HTTP ${response.statusCode}).',
+      };
+    }
+    data['statusCode'] = response.statusCode;
+    return data;
   }
 
   static Future<Map<String, dynamic>> verifyToken(String token) async {
@@ -693,7 +735,7 @@ class ApiService {
 
       final response = await http.get(
         Uri.parse(url),
-        // , headers: await _getHeaders(),
+        headers: await _getHeaders(),
       );
 
       print('📡 Status questões: ${response.statusCode}');
@@ -752,7 +794,7 @@ class ApiService {
       final response = await http
           .get(
             Uri.parse(url),
-            //, headers: await _getHeaders()
+            headers: await _getHeaders(),
           )
           .timeout(
             const Duration(seconds: 60),
@@ -1421,6 +1463,15 @@ class PermanentSubmitException implements Exception {
 
   @override
   String toString() => message;
+}
+
+/// O servidor não respondeu (sem internet, sinal fraco, tempo esgotado).
+class SemConexaoException implements Exception {
+  final String detalhe;
+  SemConexaoException(this.detalhe);
+
+  @override
+  String toString() => 'Sem conexão com o servidor';
 }
 
 /// NOVA: Classe para exceções personalizadas da API
