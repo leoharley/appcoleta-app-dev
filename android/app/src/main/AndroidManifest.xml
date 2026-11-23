@@ -29,9 +29,9 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="29" />
     
-    <!-- Para Android 13+ (API 33+) - Permissões granulares de mídia -->
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <!-- Sem READ_MEDIA_IMAGES/VIDEO: o app tira a foto pela câmera e não lê a
+         galeria. O Google Play exige justificar essas permissões e recusa
+         quem não precisa delas. -->
     
     <!-- Outros -->
     <uses-permission android:name="android.permission.VIBRATE" />

@@ -33,6 +33,9 @@ external bool _pwaRecebeuConvite();
 @JS('pwaAbrirNoChrome')
 external void _pwaAbrirNoChrome();
 
+@JS('pwaAparelho')
+external JSString _pwaAparelho();
+
 @JS('pwaRegistrarCallback')
 external void _pwaRegistrarCallback(JSFunction callback);
 
@@ -152,6 +155,15 @@ class PwaInstall {
       return _pwaRecebeuConvite();
     } catch (e) {
       return false;
+    }
+  }
+
+  /// Modelo do aparelho e versões (vazio enquanto o navegador não respondeu).
+  static String get aparelho {
+    try {
+      return _pwaAparelho().toDart;
+    } catch (e) {
+      return '';
     }
   }
 

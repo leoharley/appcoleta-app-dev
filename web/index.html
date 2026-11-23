@@ -166,6 +166,26 @@
       };
       window.addEventListener('beforeinstallprompt', function () { estado.recebeu = true; });
 
+      // Aparelho do entrevistador (modelo e versões), para o painel saber em
+      // que celulares o app roda. O Chrome esconde o modelo no userAgent;
+      // ele vem pela API de "client hints", que responde depois de um tempo.
+      // Nada do entrevistado é coletado aqui.
+      var aparelho = '';
+      try {
+        if (navigator.userAgentData && navigator.userAgentData.getHighEntropyValues) {
+          navigator.userAgentData.getHighEntropyValues(['model', 'platformVersion', 'fullVersionList'])
+            .then(function (d) {
+              var chrome = '';
+              (d.fullVersionList || []).forEach(function (b) {
+                if (/Chrome|Chromium/.test(b.brand) && !chrome) chrome = b.version;
+              });
+              aparelho = 'modelo=' + (d.model || '') + ';plataforma=' + (d.platform || '') +
+                ';versao=' + (d.platformVersion || '') + ';chrome=' + chrome;
+            }).catch(function () {});
+        }
+      } catch (e) {}
+      window.pwaAparelho = function () { return aparelho; };
+
       // Reabre este mesmo endereço no Chrome (Android). Se o Chrome não estiver
       // instalado, o Android segue para o endereço normal.
       window.pwaAbrirNoChrome = function () {

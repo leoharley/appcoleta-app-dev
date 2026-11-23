@@ -3,9 +3,11 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/form_response.dart';
 import '../models/stratification.dart';
+import 'pwa_install/pwa_install.dart';
 
 class ApiService {
   // Padrão = produção. Para o ambiente de evoluções (VPS), compilar com:
@@ -16,6 +18,27 @@ class ApiService {
   );
   //static const String baseUrl = 'http://localhost/painel_sxdata/api';
 
+  static String? _versaoApp;
+
+  /// Versão do app e aparelho, enviados em toda chamada: o painel mostra por
+  /// entrevistador em que celular e versão o app está rodando (Prompt 20).
+  /// Nada do entrevistado vai aqui.
+  static Future<Map<String, String>> _headersAparelho() async {
+    if (_versaoApp == null) {
+      try {
+        final info = await PackageInfo.fromPlatform();
+        _versaoApp = '${info.version}+${info.buildNumber}';
+      } catch (_) {
+        _versaoApp = '';
+      }
+    }
+    final aparelho = PwaInstall.aparelho;
+    return {
+      if (_versaoApp!.isNotEmpty) 'X-App-Versao': _versaoApp!,
+      if (aparelho.isNotEmpty) 'X-Aparelho': aparelho,
+    };
+  }
+
   static Future<Map<String, String>> _getHeaders() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('auth_token');
@@ -24,6 +47,7 @@ class ApiService {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
       if (token != null) 'Authorization': 'Bearer $token',
+      ...await _headersAparelho(),
     };
   }
 
@@ -66,6 +90,7 @@ class ApiService {
             headers: {
               'Content-Type': 'application/json',
               'Accept': 'application/json',
+              ...await _headersAparelho(),
             },
             body: jsonEncode(body),
           )

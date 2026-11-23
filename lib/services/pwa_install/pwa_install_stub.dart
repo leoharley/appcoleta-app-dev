@@ -27,6 +27,8 @@ class PwaInstall {
 
   static void abrirNoChrome() {}
 
+  static String get aparelho => '';
+
   static void registrarCallback(void Function() aoMudar) {}
 }
 
