@@ -22,10 +22,16 @@ class QuestionScreen extends StatefulWidget {
   final Questionnaire questionnaire;
   final int currentQuestionIndex;
 
+  /// True quando a pessoa aceitou na tela de consentimento. Esta tela recria
+  /// a entrevista ao abrir e, antes disso, o aceite se perdia: o servidor
+  /// recebia "sem consentimento" em quase todas as entrevistas.
+  final bool consentimentoDado;
+
   const QuestionScreen({
     super.key,
     required this.questionnaire,
     required this.currentQuestionIndex,
+    this.consentimentoDado = false,
   });
 
   @override
@@ -145,6 +151,9 @@ class _QuestionScreenState extends State<QuestionScreen>
         authProvider.user!.id,
         widget.questionnaire.questions,
       );
+      if (widget.consentimentoDado) {
+        formProvider.setConsent(true);
+      }
 
       // Verificar se inicialização foi bem-sucedida
       if (formProvider.currentForm != null && formProvider.questions.isNotEmpty) {

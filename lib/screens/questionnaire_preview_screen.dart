@@ -254,7 +254,7 @@ class _QuestionnairePreviewScreenState
                     ),
                     const SizedBox(height: 5),
                     Text(
-                      '${widget.questionnaire.estimatedTime ?? 10}-${(widget.questionnaire.estimatedTime ?? 10) + 2} min',
+                      _tempoEstimado(widget.questionnaire),
                       style: const TextStyle(
                         fontWeight: FontWeight.w500,
                         color: Color(0xFF23345F),
@@ -354,6 +354,18 @@ class _QuestionnairePreviewScreenState
         ],
       ),
     );
+  }
+
+  /// Tempo informado no painel; sem ele, estimativa pela quantidade de
+  /// perguntas (cerca de 30 segundos cada). Antes, sem tempo cadastrado, a
+  /// tela mostrava "10-12 min" fixo, até para 2 perguntas.
+  String _tempoEstimado(Questionnaire q) {
+    final informado = q.estimatedTime;
+    if (informado != null && informado > 0) return 'cerca de $informado min';
+    final perguntas = q.questions.length;
+    if (perguntas == 0) return 'não informado';
+    final minutos = (perguntas / 2).ceil();
+    return minutos <= 1 ? 'cerca de 1 min' : 'cerca de $minutos min';
   }
 
   Widget _buildInfoCard() {

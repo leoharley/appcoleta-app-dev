@@ -281,6 +281,7 @@ class _ConsentScreenState extends State<ConsentScreen> {
           builder: (context) => QuestionScreen(
             questionnaire: widget.questionnaire,
             currentQuestionIndex: 0,
+            consentimentoDado: true,
           ),
         ),
       );

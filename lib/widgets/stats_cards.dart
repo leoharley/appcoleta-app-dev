@@ -15,8 +15,11 @@ class StatsCards extends StatelessWidget {
       children: [
         Expanded(
           child: _buildStatCard(
-            _getQuestionnairesTodayCount().toString(),
-            'Formulários Disponibilizados Hoje',
+            // Antes contava os formulários CRIADOS hoje no painel, e mostrava
+            // 0 com questionário na lista. O que interessa ao entrevistador é
+            // quantos ele tem liberados para aplicar agora.
+            questionnaires.length.toString(),
+            'Formulários liberados para você',
             const Color(0xFFE8962E),
           ),
         ),
@@ -30,23 +33,6 @@ class StatsCards extends StatelessWidget {
         ), */
       ],
     );
-  }
-
-  /// Conta quantos questionários foram criados hoje
-  int _getQuestionnairesTodayCount() {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final tomorrow = today.add(const Duration(days: 1));
-    
-    return questionnaires.where((questionnaire) {
-      final createdDate = DateTime(
-        questionnaire.createdAt.year,
-        questionnaire.createdAt.month,
-        questionnaire.createdAt.day,
-      );
-      return createdDate.isAtSameMomentAs(today) || 
-             (createdDate.isAfter(today) && createdDate.isBefore(tomorrow));
-    }).length;
   }
 
   /// Conta quantos questionários estão pendentes de sincronização

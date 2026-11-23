@@ -393,6 +393,10 @@ class AuthProvider with ChangeNotifier {
         'offline_username',
         'offline_password',
         'cached_history',
+        // Questionários atribuídos a quem saiu: o próximo usuário recebe os
+        // dele do servidor (LocalStorageService também confere o dono).
+        'questionnaires',
+        'questionnaires_owner',
       ]) {
         await prefs.remove(chave);
       }

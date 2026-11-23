@@ -7,6 +7,7 @@ import '../models/stratification.dart';
 
 class LocalStorageService {
   static const String _questionnairesKey = 'questionnaires';
+  static const String _questionnairesOwnerKey = 'questionnaires_owner';
   static const String _formsKey = 'form_responses';
   static const String _stratificationKeyPrefix = 'stratification_';
 
@@ -103,6 +104,11 @@ class LocalStorageService {
       final jsonList = questionnaires.map((q) => q.toJson()).toList();
       final jsonString = jsonEncode(jsonList);
       await prefs.setString(_questionnairesKey, jsonString);
+      // Dono da lista: cada usuário recebe só os questionários atribuídos a
+      // ele. Sem a marca, quem entrava depois no mesmo aparelho (sem sinal)
+      // via a lista do anterior — de um supervisor, todos os questionários.
+      final dono = prefs.getInt('user_id');
+      if (dono != null) await prefs.setInt(_questionnairesOwnerKey, dono);
       print('✅ Questionários salvos com sucesso');
     } catch (e, stackTrace) {
       print('❌ Erro ao salvar questionários: $e');
@@ -119,6 +125,14 @@ class LocalStorageService {
 
       if (jsonString == null) {
         print('⚠️ Nenhum questionário encontrado no storage local');
+        return [];
+      }
+
+      // Lista de outro usuário (ou de versão antiga, sem dono): não serve.
+      final dono = prefs.getInt(_questionnairesOwnerKey);
+      final atual = prefs.getInt('user_id');
+      if (dono == null || atual == null || dono != atual) {
+        print('⚠️ Questionários guardados são de outro usuário — ignorados');
         return [];
       }
 

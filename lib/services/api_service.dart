@@ -283,6 +283,16 @@ class ApiService {
     }
   }
 
+  /// O áudio só sai do aparelho quando o servidor confirma ter recebido o
+  /// arquivo inteiro. Sem essa conferência, um envio cortado pela rede era
+  /// dado como enviado, o arquivo local era apagado e a entrevista ficava sem
+  /// áudio para sempre.
+  static bool _arquivoCompleto(dynamic resposta, int tamanhoLocal) {
+    if (resposta is! Map || resposta['success'] != true) return false;
+    final recebido = int.tryParse('${resposta['file_size'] ?? ''}');
+    return recebido == null || recebido == tamanhoLocal;
+  }
+
   /// Upload de áudio a partir de bytes (versão web).
   static Future<Map<String, dynamic>> uploadAudioBytes(
       Uint8List bytes, String filename) async {
@@ -297,12 +307,14 @@ class ApiService {
       request.files.add(
         http.MultipartFile.fromBytes('audio', bytes, filename: filename),
       );
+      // O servidor confere se recebeu o arquivo inteiro (Media_upload).
+      request.fields['size'] = bytes.length.toString();
 
       final response = await request.send();
       final responseBody = await response.stream.bytesToString();
       final responseData = jsonDecode(responseBody);
 
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 && _arquivoCompleto(responseData, bytes.length)) {
         return responseData;
       } else {
         throw Exception(responseData['message'] ?? 'Failed to upload audio');
@@ -324,6 +336,8 @@ class ApiService {
       final headers = await _getHeaders();
       request.headers.addAll(headers);
       request.files.add(await http.MultipartFile.fromPath('audio', audio.path));
+      final tamanhoLocal = await audio.length();
+      request.fields['size'] = tamanhoLocal.toString();
       if (formResponseId != null) {
         request.fields['form_response_id'] = formResponseId.toString();
       }
@@ -332,11 +346,11 @@ class ApiService {
       final responseBody = await response.stream.bytesToString();
       final responseData = jsonDecode(responseBody);
 
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 && _arquivoCompleto(responseData, tamanhoLocal)) {
         print('✅ Audio uploaded successfully');
         return responseData;
       } else {
-        throw Exception(responseData['message'] ?? 'Failed to upload audio');
+        throw Exception(responseData['message'] ?? 'Áudio não confirmado pelo servidor');
       }
     } catch (e) {
       print('❌ Failed to upload audio: $e');
