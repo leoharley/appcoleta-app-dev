@@ -144,6 +144,37 @@
       window.pwaRegistrarCallback = function (cb) {
         estado.aoMudar = cb;
       };
+
+      // Qual navegador abriu a página. Só o Chrome (e poucos outros) oferece
+      // instalar; o navegador interno do WhatsApp/Instagram/Facebook (WebView,
+      // "; wv)" no userAgent) e o navegador da Xiaomi não têm essa opção, e a
+      // pessoa fica procurando um botão que não existe.
+      window.pwaNavegador = function () {
+        var ua = window.navigator.userAgent;
+        if (/FBAN|FBAV|Instagram|WhatsApp|Line\/|; wv\)/.test(ua)) return 'interno';
+        if (/MiuiBrowser|XiaoMi/.test(ua)) return 'xiaomi';
+        if (/SamsungBrowser/.test(ua)) return 'samsung';
+        if (/Firefox|FxiOS/.test(ua)) return 'firefox';
+        if (/OPR\/|Opera/.test(ua)) return 'opera';
+        if (/EdgA|Edg\//.test(ua)) return 'edge';
+        if (/Chrome\//.test(ua)) return 'chrome';
+        return 'outro';
+      };
+
+      window.pwaRecebeuConvite = function () {
+        return !!estado.deferido || estado.recebeu === true;
+      };
+      window.addEventListener('beforeinstallprompt', function () { estado.recebeu = true; });
+
+      // Reabre este mesmo endereço no Chrome (Android). Se o Chrome não estiver
+      // instalado, o Android segue para o endereço normal.
+      window.pwaAbrirNoChrome = function () {
+        var url = window.location.href.split('#')[0];
+        var semEsquema = url.replace(/^https?:\/\//, '');
+        window.location.href = 'intent://' + semEsquema +
+          '#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=' +
+          encodeURIComponent(url) + ';end';
+      };
     })();
 
     // -----------------------------------------------------------------------

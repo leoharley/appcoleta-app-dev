@@ -92,6 +92,10 @@ class _LoginScreenState extends State<LoginScreen> {
             SizedBox(height: 6),
             Text('• Veja se o app Alves Lima já não está na lista de aplicativos do '
                 'celular.'),
+            SizedBox(height: 6),
+            Text('• Xiaomi, Redmi ou Poco: em Configurações > Apps > Chrome > '
+                'Outras permissões, ative "Atalhos na tela inicial" e tente '
+                'de novo.'),
             SizedBox(height: 12),
             Text('Se nada disso resolver, você pode usar pelo navegador. Seus '
                 'dados ficam guardados do mesmo jeito; use sempre o Chrome e '
@@ -389,6 +393,7 @@ class _LoginScreenState extends State<LoginScreen> {
           const SizedBox(height: 20),
           _buildComoAbrir(legenda: legenda),
           const SizedBox(height: 24),
+          if (!jaInstalou && _navegadorSemInstalacao) _buildAbrirNoChrome(),
           if (!jaInstalou)
             SizedBox(
               width: double.infinity,
@@ -429,6 +434,80 @@ class _LoginScreenState extends State<LoginScreen> {
               color: Color.fromARGB(255, 145, 145, 145),
             ),
             textAlign: TextAlign.center,
+          ),
+          // Para o suporte: num print desta tela dá para saber em que
+          // navegador a pessoa está e se o navegador ofereceu a instalação.
+          Text(
+            'Navegador: ${_nomeNavegador(PwaInstall.navegador)} · instalação '
+            '${PwaInstall.recebeuConvite ? 'oferecida' : 'não oferecida'}',
+            style: const TextStyle(
+              fontSize: 11,
+              color: Color.fromARGB(255, 165, 165, 165),
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Navegadores em que não há como instalar: o interno do WhatsApp/Instagram
+  /// e o da Xiaomi (padrão em vários Redmi). Só o Chrome resolve.
+  bool get _navegadorSemInstalacao =>
+      !PwaInstall.ehIos &&
+      const ['interno', 'xiaomi', 'outro'].contains(PwaInstall.navegador);
+
+  String _nomeNavegador(String codigo) {
+    switch (codigo) {
+      case 'chrome':
+        return 'Chrome';
+      case 'interno':
+        return 'interno de outro aplicativo';
+      case 'xiaomi':
+        return 'Xiaomi';
+      case 'samsung':
+        return 'Samsung Internet';
+      case 'firefox':
+        return 'Firefox';
+      case 'opera':
+        return 'Opera';
+      case 'edge':
+        return 'Edge';
+      default:
+        return 'outro';
+    }
+  }
+
+  Widget _buildAbrirNoChrome() {
+    final interno = PwaInstall.navegador == 'interno';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF4E5),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE8962E)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            interno
+                ? 'Este endereço abriu dentro de outro aplicativo (WhatsApp, '
+                    'Instagram etc.), que não instala o app.'
+                : 'Este navegador não instala o app. Abra no Google Chrome.',
+            style: const TextStyle(fontSize: 14, color: Color(0xFF6B4A12)),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: PwaInstall.abrirNoChrome,
+            icon: const Icon(Icons.open_in_browser),
+            label: const Text('ABRIR NO CHROME'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFF23345F),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
           ),
         ],
       ),
@@ -622,6 +701,9 @@ class _LoginScreenState extends State<LoginScreen> {
             'Toque no menu do navegador (os três pontinhos, no canto superior).',
             'Escolha "Instalar aplicativo" ou "Adicionar à tela inicial".',
             'Confirme em "Instalar".',
+            'Xiaomi, Redmi ou Poco: se nada aparecer na tela de início, vá em '
+                'Configurações > Apps > Chrome > Outras permissões e ative '
+                '"Atalhos na tela inicial". Depois repita.',
           ],
         );
     }

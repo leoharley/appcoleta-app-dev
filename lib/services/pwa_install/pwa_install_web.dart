@@ -24,6 +24,15 @@ external bool _pwaEhCelular();
 @JS('pwaInstalar')
 external JSPromise<JSString> _pwaInstalar();
 
+@JS('pwaNavegador')
+external JSString _pwaNavegador();
+
+@JS('pwaRecebeuConvite')
+external bool _pwaRecebeuConvite();
+
+@JS('pwaAbrirNoChrome')
+external void _pwaAbrirNoChrome();
+
 @JS('pwaRegistrarCallback')
 external void _pwaRegistrarCallback(JSFunction callback);
 
@@ -124,6 +133,33 @@ class PwaInstall {
     } catch (e) {
       print('❌ Erro ao instalar PWA: $e');
       return PwaInstallResult.indisponivel;
+    }
+  }
+
+  /// 'chrome', 'interno' (WhatsApp/Instagram/Facebook), 'xiaomi', 'samsung',
+  /// 'firefox', 'opera', 'edge' ou 'outro'.
+  static String get navegador {
+    try {
+      return _pwaNavegador().toDart;
+    } catch (e) {
+      return 'outro';
+    }
+  }
+
+  /// O navegador chegou a oferecer a instalação nesta abertura?
+  static bool get recebeuConvite {
+    try {
+      return _pwaRecebeuConvite();
+    } catch (e) {
+      return false;
+    }
+  }
+
+  static void abrirNoChrome() {
+    try {
+      _pwaAbrirNoChrome();
+    } catch (e) {
+      print('⚠️ Não foi possível abrir no Chrome: $e');
     }
   }
 

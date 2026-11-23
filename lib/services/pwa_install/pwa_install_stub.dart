@@ -21,6 +21,12 @@ class PwaInstall {
   static Future<PwaInstallResult> instalar() async =>
       PwaInstallResult.indisponivel;
 
+  static String get navegador => 'outro';
+
+  static bool get recebeuConvite => false;
+
+  static void abrirNoChrome() {}
+
   static void registrarCallback(void Function() aoMudar) {}
 }
 
