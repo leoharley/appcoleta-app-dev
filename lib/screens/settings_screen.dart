@@ -1,5 +1,6 @@
 // screens/settings_screen.dart
 import 'package:flutter/material.dart';
+import '../services/compat_check.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/photo_storage_service.dart';
@@ -179,6 +180,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           'Enviar de novo ao servidor as fotos que ficaram no aparelho',
                           Icons.cloud_upload,
                           () => _forcePhotoUpload(),
+                        ),
+                        _buildActionItem(
+                          'Cuidados com a bateria',
+                          'Passo a passo para o celular não fechar o app no meio da entrevista',
+                          Icons.battery_alert,
+                          () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const BatteryGuideScreen())),
                         ),
                       ],
                     ),

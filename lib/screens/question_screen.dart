@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:record/record.dart';
@@ -6,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../models/questionnaire.dart';
 import '../models/question.dart';
+import '../models/question_option.dart';
 import '../providers/form_provider.dart';
 import '../providers/stratification_provider.dart';
 import '../widgets/question_widgets.dart';
@@ -27,11 +29,15 @@ class QuestionScreen extends StatefulWidget {
   /// recebia "sem consentimento" em quase todas as entrevistas.
   final bool consentimentoDado;
 
+  /// Entrevista interrompida guardada no aparelho, para retomar (Prompt 5).
+  final Map<String, dynamic>? draft;
+
   const QuestionScreen({
     super.key,
     required this.questionnaire,
     required this.currentQuestionIndex,
     this.consentimentoDado = false,
+    this.draft,
   });
 
   @override
@@ -59,6 +65,12 @@ class _QuestionScreenState extends State<QuestionScreen>
   String? _webSessionId;
   String? _webFirstSegmentFilename;
   String _webAudioExt = 'm4a';
+
+  // Prompt 6: a gravação não pode parar em silêncio.
+  bool _finishing = false;
+  StreamSubscription<RecordState>? _recordStateSub;
+  // Prompt 8: valores atípicos já confirmados com o entrevistado.
+  final Set<String> _softConfirmed = {};
 
   @override
   void initState() {
@@ -138,6 +150,24 @@ class _QuestionScreenState extends State<QuestionScreen>
         return;
       }
 
+      // Retomar entrevista interrompida (Prompt 5).
+      if (widget.draft != null) {
+        formProvider.clearForm();
+        if (formProvider.restoreDraft(widget.draft!, widget.questionnaire)) {
+          final page = formProvider.draftPageIndex;
+          setState(() {
+            _isInitialized = true;
+            _currentVisibleIndex = page;
+          });
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (_pageController.hasClients) _pageController.jumpToPage(page);
+            _enterVisible(formProvider, page);
+          });
+          _startRecording();
+          return;
+        }
+      }
+
       // Se NÃO está em modo de edição, limpar e criar novo formulário
       print('📝 MODO NOVO FORMULÁRIO - Limpando dados anteriores');
       formProvider.clearForm();
@@ -151,9 +181,16 @@ class _QuestionScreenState extends State<QuestionScreen>
         authProvider.user!.id,
         widget.questionnaire.questions,
       );
+      formProvider.setQuestionnaireContext(widget.questionnaire);
       if (widget.consentimentoDado) {
         formProvider.setConsent(true);
       }
+      final munis = widget.questionnaire.municipalities;
+      if (munis.length == 1) formProvider.setMetaValue('municipio', munis.first);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _enterVisible(formProvider, 0);
+        if (munis.length > 1) _askMunicipio(formProvider, munis);
+      });
 
       // Verificar se inicialização foi bem-sucedida
       if (formProvider.currentForm != null && formProvider.questions.isNotEmpty) {
@@ -291,6 +328,9 @@ class _QuestionScreenState extends State<QuestionScreen>
                       setState(() {
                         _currentVisibleIndex = index;
                       });
+                      if (index >= 0 && index < visibleQuestions.length) {
+                        formProvider.enterQuestion(visibleQuestions[index].id, pageIndex: index);
+                      }
                     },
                     itemBuilder: (context, index) {
                       final question = visibleQuestions[index];
@@ -516,10 +556,13 @@ class _QuestionScreenState extends State<QuestionScreen>
 
     final questionState = formProvider.getQuestionState(originalIndex);
     final isRequired = questionState?.required ?? question.isRequired;
-    if (!isRequired) return true;
 
     final response = formProvider.getResponse(question.id);
-    return response != null && response.toString().trim().isNotEmpty;
+    final answered = response != null && response.toString().trim().isNotEmpty;
+    if (isRequired && !answered) return false;
+    final prob = formProvider.validationProblem(question);
+    if (prob != null && (prob.hard || !_softConfirmed.contains('${question.id}=$response'))) return false;
+    return true;
   }
 
   int _getOriginalIndex(Question question, FormProvider formProvider) {
@@ -635,9 +678,19 @@ class _QuestionScreenState extends State<QuestionScreen>
                   ),
                   const SizedBox(height: 10), */
 
+                  if (question.showCard && question.options.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.fullscreen),
+                        label: const Text('Mostrar as opções ao entrevistado'),
+                        onPressed: () => _showCard(_ordered(question, formProvider)),
+                      ),
+                    ),
+
                   // Widget da questão
                   QuestionWidget(
-                    question: question,
+                    question: _ordered(question, formProvider),
                     initialValue: formProvider.getResponse(question.id),
                     onChanged: (value) {
                       print('📝 === RESPOSTA ALTERADA ===');
@@ -783,6 +836,33 @@ class _QuestionScreenState extends State<QuestionScreen>
       }
     }
 
+    // Validação (Prompt 8): rígida bloqueia; suave pede confirmação.
+    final prob = formProvider.validationProblem(currentQuestion);
+    if (prob != null) {
+      final key = '${currentQuestion.id}=${formProvider.getResponse(currentQuestion.id)}';
+      if (prob.hard) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(prob.message), backgroundColor: Colors.red),
+        );
+        return;
+      }
+      if (!_softConfirmed.contains(key)) {
+        final ok = await showDialog<bool>(
+          context: context,
+          builder: (c) => AlertDialog(
+            title: const Text('Confirme o valor'),
+            content: Text(prob.message),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Corrigir')),
+              ElevatedButton(onPressed: () => Navigator.pop(c, true), child: const Text('Está correto')),
+            ],
+          ),
+        );
+        if (ok != true) return;
+        setState(() => _softConfirmed.add(key));
+      }
+    }
+
     if (isLastQuestion) {
       // Validação final
       final validation = formProvider.validateAllResponses();
@@ -797,6 +877,10 @@ class _QuestionScreenState extends State<QuestionScreen>
         );
         return;
       }
+
+      _finishing = true;
+      formProvider.setMetaValue('audio_duration_sec', _recordingSeconds);
+      formProvider.leaveQuestion();
 
       // Parar gravação de áudio e salvar caminho
       if (_isRecording) {
@@ -926,7 +1010,7 @@ class _QuestionScreenState extends State<QuestionScreen>
 
     if (resultado.ok) {
       final p = resultado.position!;
-      formProvider.setLocation(p.latitude, p.longitude, '');
+      formProvider.setLocation(p.latitude, p.longitude, '', accuracy: p.accuracy);
       return null;
     }
     return resultado.erro;
@@ -1137,18 +1221,32 @@ class _QuestionScreenState extends State<QuestionScreen>
     final alert = stratProvider.getQuotaAlert(questionId, optionValue);
     if (alert == null) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
+    // Prompt 13: avisa ANTES de seguir. Continuar é permitido (sem sinal a
+    // posição pode estar desatualizada), mas o servidor guarda a entrevista
+    // como excedente se a vaga já estiver ocupada.
+    final formProvider = Provider.of<FormProvider>(context, listen: false);
+    showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Cota cheia para este perfil'),
         content: Text(
-          'Atenção: A cota para ${alert['optionLabel']} na categoria '
-          '${alert['categoryName']} já foi atingida '
-          '(${alert['currentCount']}/${alert['targetQuota']}).',
+          'A cota de ${alert['categoryName']} = ${alert['optionLabel']} já foi atingida '
+          '(${alert['currentCount']} de ${alert['targetQuota']}, na última sincronização).\n\n'
+          'Se continuar, a entrevista fica guardada como excedente, fora do resultado.',
         ),
-        backgroundColor: Colors.orange.shade700,
-        duration: const Duration(seconds: 4),
-        behavior: SnackBarBehavior.floating,
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Encerrar entrevista')),
+          ElevatedButton(onPressed: () => Navigator.pop(c, true), child: const Text('Continuar mesmo assim')),
+        ],
       ),
-    );
+    ).then((continuar) {
+      if (!mounted) return;
+      formProvider.setMetaValue('aviso_cota', '${alert['categoryName']}=${alert['optionLabel']}');
+      if (continuar == false) {
+        formProvider.discardDraft(formProvider.currentForm?.appliedBy ?? 0);
+        Navigator.of(context).maybePop();
+      }
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -1166,6 +1264,7 @@ class _QuestionScreenState extends State<QuestionScreen>
       final status = await Permission.microphone.request();
       if (!status.isGranted) {
         print('🎤 Permissão de microfone negada');
+        _onRecordingFailure('o microfone não foi liberado para o app');
         return;
       }
 
@@ -1196,9 +1295,13 @@ class _QuestionScreenState extends State<QuestionScreen>
         });
 
         print('🎤 Gravação iniciada: $path');
+      } else {
+        _onRecordingFailure('o microfone não foi liberado para o app');
       }
+      _watchRecording();
     } catch (e) {
       print('❌ Erro ao iniciar gravação: $e');
+      _onRecordingFailure('o gravador não iniciou ($e)');
     }
   }
 
@@ -1212,6 +1315,7 @@ class _QuestionScreenState extends State<QuestionScreen>
     try {
       if (!await _audioRecorder.hasPermission()) {
         print('🎤 Web: permissão de microfone negada — seguindo sem áudio');
+        _onRecordingFailure('o navegador não liberou o microfone');
         return;
       }
 
@@ -1257,6 +1361,7 @@ class _QuestionScreenState extends State<QuestionScreen>
       print('🎤 Web: segmento iniciado (sessão $_webSessionId, .$_webAudioExt)');
     } catch (e) {
       print('❌ Web: erro ao iniciar gravação: $e');
+      _onRecordingFailure('o gravador do navegador não iniciou');
     }
   }
 
@@ -1343,6 +1448,125 @@ class _QuestionScreenState extends State<QuestionScreen>
     }
   }
 
+  /// Primeira pergunta visível na página [page] passa a contar o tempo.
+  void _enterVisible(FormProvider formProvider, int page) {
+    final visible = <Question>[];
+    for (int i = 0; i < formProvider.questions.length; i++) {
+      if (formProvider.isQuestionVisible(i)) visible.add(formProvider.questions[i]);
+    }
+    if (page >= 0 && page < visible.length) formProvider.enterQuestion(visible[page].id, pageIndex: page);
+  }
+
+  /// Rodízio aleatório das opções: sorteia uma vez por entrevista e grava a
+  /// ordem exibida (Prompt 8). Sem rodízio, devolve a pergunta como veio.
+  Question _ordered(Question q, FormProvider formProvider) {
+    if (!q.randomizeOptions || q.options.length < 2) return q;
+    var order = formProvider.optionOrderFor(q.id);
+    if (order == null) {
+      final labels = q.options.map((o) => o.optionText).toList()..shuffle(Random());
+      formProvider.recordOptionOrder(q.id, labels);
+      order = labels;
+    }
+    final byLabel = {for (final o in q.options) o.optionText: o};
+    final sorted = <QuestionOption>[
+      for (final l in order) if (byLabel[l] != null) byLabel[l]!,
+      for (final o in q.options) if (!order.contains(o.optionText)) o,
+    ];
+    return q.copyWith(options: sorted);
+  }
+
+  /// Disco digital: opções em tela cheia, letra grande, para o entrevistado ler.
+  void _showCard(Question q) {
+    Navigator.of(context).push(MaterialPageRoute(
+      fullscreenDialog: true,
+      builder: (c) => Scaffold(
+        backgroundColor: const Color(0xFF23345F),
+        appBar: AppBar(
+          backgroundColor: const Color(0xFF23345F),
+          foregroundColor: Colors.white,
+          title: const Text('Mostre ao entrevistado'),
+        ),
+        body: ListView(
+          padding: const EdgeInsets.all(24),
+          children: [
+            Text(q.questionText, style: const TextStyle(color: Colors.white70, fontSize: 18)),
+            const SizedBox(height: 20),
+            for (var i = 0; i < q.options.length; i++)
+              Container(
+                margin: const EdgeInsets.only(bottom: 14),
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+                child: Text('${i + 1}. ${q.options[i].optionText}',
+                    style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w600, color: Color(0xFF23345F))),
+              ),
+          ],
+        ),
+      ),
+    ));
+  }
+
+  /// Se a gravação parar no meio, avisa na hora e oferece gravar de novo.
+  void _watchRecording() {
+    if (!PlatformCaps.hasContinuousAudioRecording) return;
+    _recordStateSub?.cancel();
+    _recordStateSub = _audioRecorder.onStateChanged().listen((state) {
+      if (state == RecordState.stop && _isRecording && !_finishing && mounted) {
+        setState(() => _isRecording = false);
+        _recordingTimer?.cancel();
+        _recordingTimer = null;
+        _onRecordingFailure('a gravação parou sozinha');
+      }
+    });
+  }
+
+  /// Falha de áudio nunca é silenciosa (Prompt 6): o entrevistador vê o aviso
+  /// e o coordenador vê no painel. Se a pesquisa exige áudio, a entrevista
+  /// não segue sem o microfone gravando.
+  Future<void> _onRecordingFailure(String motivo) async {
+    if (!mounted) return;
+    final formProvider = Provider.of<FormProvider>(context, listen: false);
+    formProvider.addFalha('Áudio: $motivo');
+    if (!widget.questionnaire.requiresAudio) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Atenção: $motivo. A entrevista segue sem áudio.'),
+        backgroundColor: Colors.red.shade700,
+        duration: const Duration(seconds: 6),
+      ));
+      return;
+    }
+    final again = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (c) => AlertDialog(
+        title: const Text('A gravação não está funcionando'),
+        content: Text('Motivo: $motivo.\n\nEsta pesquisa exige áudio. Libere o microfone para o app nas configurações do celular e toque em "Tentar de novo".'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Sair da entrevista')),
+          ElevatedButton(onPressed: () => Navigator.pop(c, true), child: const Text('Tentar de novo')),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (again == true) {
+      await _startRecording();
+    } else {
+      Navigator.of(context).maybePop();
+    }
+  }
+
+  /// Pesquisa com mais de um município: o entrevistador escolhe onde está.
+  Future<void> _askMunicipio(FormProvider formProvider, List<String> munis) async {
+    final m = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (c) => SimpleDialog(
+        title: const Text('Em qual município é esta entrevista?'),
+        children: [for (final x in munis) SimpleDialogOption(onPressed: () => Navigator.pop(c, x), child: Text(x))],
+      ),
+    );
+    if (m != null) formProvider.setMetaValue('municipio', m);
+  }
+
   String _formatRecordingTime(int seconds) {
     final m = (seconds ~/ 60).toString().padLeft(2, '0');
     final s = (seconds % 60).toString().padLeft(2, '0');
@@ -1352,6 +1576,7 @@ class _QuestionScreenState extends State<QuestionScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _recordStateSub?.cancel();
     WakelockPlus.disable();
     _recordingTimer?.cancel();
     if (_isRecording) {

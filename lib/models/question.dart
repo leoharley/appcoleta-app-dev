@@ -13,6 +13,16 @@ class Question {
   final Map<String, dynamic>? conditionalLogic;
   final List<QuestionOption> options;
 
+  /// Validação do editor (Prompt 8): min/max bloqueiam; soft_min/soft_max
+  /// pedem confirmação; max_length limita texto.
+  final Map<String, dynamic>? validation;
+
+  /// Rodízio aleatório das opções (a ordem exibida é gravada na entrevista).
+  final bool randomizeOptions;
+
+  /// Disco digital: mostrar as opções em tela cheia ao entrevistado.
+  final bool showCard;
+
   // Propriedades computadas para lógica condicional
   ConditionalLogic? _parsedLogic;
 
@@ -25,6 +35,9 @@ class Question {
     required this.orderIndex,
     this.conditionalLogic,
     this.options = const [],
+    this.validation,
+    this.randomizeOptions = false,
+    this.showCard = false,
   });
 
   /// Retorna a lógica condicional parseada
@@ -83,6 +96,24 @@ class Question {
   }
 
   // Método auxiliar para converter string em bool (lidando com 't'/'f')
+  static Map<String, dynamic>? _parseMap(dynamic value) {
+    try {
+      if (value is Map) return Map<String, dynamic>.from(value);
+      if (value is String && value.trim().isNotEmpty) {
+        final d = jsonDecode(value);
+        if (d is Map) return Map<String, dynamic>.from(d);
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  double? validationNumber(String key) {
+    final v = validation?[key];
+    if (v is num) return v.toDouble();
+    if (v is String) return double.tryParse(v.replaceAll(',', '.'));
+    return null;
+  }
+
   static bool _parseBool(dynamic value) {
     if (value == null) return false;
     if (value is bool) return value;
@@ -179,6 +210,9 @@ class Question {
         orderIndex: _parseInt(json['order_index']),
         conditionalLogic: conditionalLogicData,
         options: optionsList,
+        validation: _parseMap(json['validation']),
+        randomizeOptions: _parseBool(json['randomize_options']),
+        showCard: _parseBool(json['show_card']),
       );
 
       print(
@@ -209,6 +243,9 @@ class Question {
       'order_index': orderIndex,
       'conditional_logic': conditionalLogic,
       'options': options.map((option) => option.toJson()).toList(),
+      'validation': validation,
+      'randomize_options': randomizeOptions,
+      'show_card': showCard,
     };
   }
 
@@ -222,6 +259,9 @@ class Question {
     int? orderIndex,
     Map<String, dynamic>? conditionalLogic,
     List<QuestionOption>? options,
+    Map<String, dynamic>? validation,
+    bool? randomizeOptions,
+    bool? showCard,
   }) {
     return Question(
       id: id ?? this.id,
@@ -232,6 +272,9 @@ class Question {
       orderIndex: orderIndex ?? this.orderIndex,
       conditionalLogic: conditionalLogic ?? this.conditionalLogic,
       options: options ?? this.options,
+      validation: validation ?? this.validation,
+      randomizeOptions: randomizeOptions ?? this.randomizeOptions,
+      showCard: showCard ?? this.showCard,
     );
   }
 

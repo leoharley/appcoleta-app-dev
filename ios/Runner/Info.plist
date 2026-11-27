@@ -8,6 +8,10 @@
 	<string>Este app precisa acessar sua localização para registrar onde as coletas são realizadas.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>Este app precisa acessar sua localização para registrar onde as coletas são realizadas.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>O app grava o áudio da entrevista para conferência da pesquisa.</string>
 	<key>NSCameraUsageDescription</key>

@@ -15,6 +15,15 @@ class Questionnaire {
   final DateTime updatedAt;
   final List<Question> questions;
 
+  /// Regras de campo da pesquisa vindas do painel: state, is_test,
+  /// municipalities, require_audio, require_gps, gps_max_accuracy_m, geo_block.
+  final Map<String, dynamic>? field;
+
+  bool get requiresAudio => field?['require_audio'] != false;
+  bool get isTestResearch => field?['is_test'] == true;
+  List<String> get municipalities => ((field?['municipalities'] as List?) ?? const [])
+      .map((m) => m is Map ? (m['nome']?.toString() ?? '') : m.toString()).where((s) => s.isNotEmpty).toList();
+
   Questionnaire({
     required this.id,
     required this.title,
@@ -29,6 +38,7 @@ class Questionnaire {
     required this.createdAt,
     required this.updatedAt,
     required this.questions,
+    this.field,
   });
 
   // Método auxiliar para converter string em int
@@ -111,6 +121,7 @@ class Questionnaire {
         createdAt: _parseDateTime(json['created_at']),
         updatedAt: _parseDateTime(json['updated_at']),
         questions: questionsList,
+        field: json['field'] is Map ? Map<String, dynamic>.from(json['field'] as Map) : null,
       );
 
       print('✅ Questionnaire parsed successfully: ${questionnaire.title} with ${questionnaire.questions.length} questions');
@@ -139,6 +150,7 @@ class Questionnaire {
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
       'questions': questions.map((q) => q.toJson()).toList(),
+      if (field != null) 'field': field,
     };
   }
 

@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../services/interview_draft_store.dart';
+import '../services/compat_check.dart';
 import 'package:provider/provider.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -61,6 +63,58 @@ class _DashboardScreenState extends State<DashboardScreen>
     _loadData();
     _loadAppVersion();
     _watchConnectivity();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _offerResume());
+    WidgetsBinding.instance.addPostFrameCallback((_) => CompatCheck.showIfNeeded(context));
+  }
+
+  /// Entrevista interrompida (app fechou, celular desligou): oferece retomar
+  /// do ponto em que parou (Prompt 5).
+  Future<void> _offerResume() async {
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+    final userId = auth.user?.id;
+    if (userId == null) return;
+    final draft = await InterviewDraftStore.load(userId);
+    if (draft == null || !mounted) return;
+    final qp = Provider.of<QuestionnaireProvider>(context, listen: false);
+    if (qp.questionnaires.isEmpty) await qp.loadQuestionnaires();
+    final qid = (draft['questionnaire_id'] as num?)?.toInt();
+    final matches = qp.questionnaires.where((q) => q.id == qid).toList();
+    if (!mounted) return;
+    final saved = DateTime.tryParse('${draft['saved_at']}');
+    final quando = saved == null ? '' : ' (parada em ${saved.day.toString().padLeft(2, '0')}/${saved.month.toString().padLeft(2, '0')} às ${saved.hour.toString().padLeft(2, '0')}:${saved.minute.toString().padLeft(2, '0')})';
+    final escolha = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (c) => AlertDialog(
+        title: const Text('Entrevista não terminada'),
+        content: Text(matches.isEmpty
+            ? 'Há uma entrevista de "${draft['questionnaire_title'] ?? 'questionário'}"$quando, mas o questionário não está mais disponível neste aparelho. Ela continua guardada.'
+            : 'Há uma entrevista de "${matches.first.title}" que não foi finalizada$quando. As respostas estão guardadas no aparelho.'),
+        actions: [
+          if (matches.isNotEmpty)
+            TextButton(onPressed: () => Navigator.pop(c, 'descartar'), child: const Text('Descartar')),
+          TextButton(onPressed: () => Navigator.pop(c, 'depois'), child: const Text('Depois')),
+          if (matches.isNotEmpty)
+            ElevatedButton(onPressed: () => Navigator.pop(c, 'retomar'), child: const Text('Retomar')),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (escolha == 'descartar') {
+      final ok = await showDialog<bool>(context: context, builder: (c) => AlertDialog(
+        title: const Text('Descartar a entrevista?'),
+        content: const Text('As respostas desta entrevista não terminada serão apagadas do aparelho.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Voltar')),
+          ElevatedButton(onPressed: () => Navigator.pop(c, true), child: const Text('Descartar')),
+        ],
+      ));
+      if (ok == true) await InterviewDraftStore.clear(userId);
+    } else if (escolha == 'retomar') {
+      await Navigator.push(context, MaterialPageRoute(
+        builder: (c) => QuestionScreen(questionnaire: matches.first, currentQuestionIndex: 0, draft: draft),
+      ));
+    }
   }
 
   /// O app pode ficar aberto em segundo plano por horas. Ao voltar ao

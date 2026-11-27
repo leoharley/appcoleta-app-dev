@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import '../services/local_storage_service.dart';
+import '../models/form_response.dart';
 
 class SyncStatusCard extends StatefulWidget {
   const SyncStatusCard({super.key});
@@ -13,11 +15,57 @@ class _SyncStatusCardState extends State<SyncStatusCard> {
   ConnectivityResult _connectionStatus = ConnectivityResult.none;
   StreamSubscription<ConnectivityResult>? _connectivitySubscription;
   bool _isOnline = false;
+  int _pendentes = 0;
 
   @override
   void initState() {
     super.initState();
     _checkConnectivity();
+    _loadPendentes();
+  }
+
+  Future<List<FormResponse>> _pendentesList() async {
+    final all = await LocalStorageService.getFormResponses();
+    return all.where((f) => f.syncStatus != 'synced').toList();
+  }
+
+  Future<void> _loadPendentes() async {
+    try {
+      final l = await _pendentesList();
+      if (mounted) setState(() => _pendentes = l.length);
+    } catch (_) {}
+  }
+
+  /// Entrevistas que ainda não chegaram ao painel e o motivo da última falha (Prompt 5).
+  Future<void> _showPendentes() async {
+    final l = await _pendentesList();
+    if (!mounted) return;
+    setState(() => _pendentes = l.length);
+    showModalBottomSheet(
+      context: context,
+      builder: (c) => SafeArea(
+        child: l.isEmpty
+            ? const Padding(padding: EdgeInsets.all(24), child: Text('Nenhuma entrevista esperando envio.'))
+            : ListView(
+                shrinkWrap: true,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text('${l.length} entrevista(s) ainda não confirmada(s) pelo painel. Elas estão guardadas no aparelho.',
+                        style: const TextStyle(fontWeight: FontWeight.w600)),
+                  ),
+                  for (final f in l)
+                    ListTile(
+                      leading: Icon(f.syncStatus == 'error' ? Icons.error : Icons.schedule,
+                          color: f.syncStatus == 'error' ? Colors.red : Colors.orange),
+                      title: Text('Entrevista de ${f.completedAt != null ? '${f.completedAt!.day.toString().padLeft(2, '0')}/${f.completedAt!.month.toString().padLeft(2, '0')} ${f.completedAt!.hour.toString().padLeft(2, '0')}:${f.completedAt!.minute.toString().padLeft(2, '0')}' : 'data desconhecida'}'),
+                      subtitle: Text(f.meta['ultimo_erro']?.toString() ??
+                          (f.syncStatus == 'error' ? 'O servidor recusou. Avise a coordenação.' : 'Ainda não enviada (sem sinal ou aguardando sincronizar).')),
+                    ),
+                ],
+              ),
+      ),
+    );
   }
 
   @override
@@ -79,7 +127,9 @@ class _SyncStatusCardState extends State<SyncStatusCard> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return GestureDetector(
+      onTap: _showPendentes,
+      child: Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -123,6 +173,9 @@ class _SyncStatusCardState extends State<SyncStatusCard> {
                   ),
                 ),
                 const SizedBox(height: 2),
+                if (_pendentes > 0)
+                  Text('$_pendentes entrevista(s) esperando envio — toque para ver',
+                      style: const TextStyle(fontSize: 12, color: Colors.orange, fontWeight: FontWeight.w600)),
                 Text(
                   _getConnectionDescription(),
                   style: TextStyle(
@@ -149,6 +202,7 @@ class _SyncStatusCardState extends State<SyncStatusCard> {
           ),
         ],
       ),
+    ),
     );
   }
 

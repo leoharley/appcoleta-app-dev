@@ -872,7 +872,7 @@ class _PhotoCaptureScreenState extends State<PhotoCaptureScreen> {
 
       if (resultado.ok) {
         final p = resultado.position!;
-        formProvider.setLocation(p.latitude, p.longitude, '');
+        formProvider.setLocation(p.latitude, p.longitude, '', accuracy: p.accuracy);
         if (mounted) {
           setState(() {
             _currentPosition = p;

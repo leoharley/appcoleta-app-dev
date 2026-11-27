@@ -115,9 +115,12 @@ class _ConsentScreenState extends State<ConsentScreen> {
                                   ),
                                   const SizedBox(height: 10),
                                   const Text(
-                                    '• O uso das informações coletadas para fins de pesquisa\n'
-                                    '• A coleta de dados de localização durante a aplicação\n'
-                                    '• O armazenamento seguro dos dados conforme LGPD',
+                                    '• O uso das informações coletadas apenas para fins de pesquisa\n'
+                                    '• A gravação de áudio da entrevista, do início ao fim\n'
+                                    '• A foto de registro da entrevista, quando a pesquisa pedir\n'
+                                    '• O registro do local da entrevista (localização do aparelho)\n'
+                                    '• O tratamento das suas opiniões, inclusive políticas, como dado sensível pela LGPD, sem divulgar seu nome\n'
+                                    '• Você pode desistir a qualquer momento, sem prejuízo',
                                     style: TextStyle(
                                       fontSize: 14,
                                       color: Color(0xFF23345F),

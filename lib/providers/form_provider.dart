@@ -10,6 +10,8 @@ import '../models/questionnaire.dart';
 import '../models/conditional_logic.dart';
 import '../services/conditional_logic_engine.dart';
 import '../services/local_storage_service.dart';
+import '../services/interview_draft_store.dart';
+import '../services/error_reporter.dart';
 import '../services/api_service.dart';
 import '../services/photo_storage_service.dart';
 import '../services/platform_caps.dart';
@@ -116,6 +118,7 @@ class FormProvider with ChangeNotifier {
           startedAt: DateTime.now(),
         );
         print('📝 client_id gerado: ${_currentForm!.clientId}');
+        _resetMeta();
         print('📝 Novo formulário criado com ID: ${_currentForm!.id}');
         _responses.clear();
       }
@@ -471,6 +474,9 @@ class FormProvider with ChangeNotifier {
     if (_currentForm != null) {
       try {
         _currentForm = _currentForm!.copyWith(consentGiven: consent);
+        if (consent) _meta['consent_at'] = DateTime.now().toIso8601String();
+        _meta['consent_text'] = 'v2-audio-foto';
+        _saveDraft();
         print('✅ Consentimento definido');
         notifyListeners();
       } catch (e) {
@@ -556,6 +562,7 @@ class FormProvider with ChangeNotifier {
       // Executar lógica condicional após cada resposta
       print('🔧 Executando lógica condicional após resposta...');
       _executeConditionalLogic();
+      _saveDraft();
     } catch (e, stackTrace) {
       print('❌ Erro ao salvar resposta: $e');
       print('📋 Stack trace: $stackTrace');
@@ -569,7 +576,8 @@ class FormProvider with ChangeNotifier {
   }
 
   /// Define a localização
-  void setLocation(double latitude, double longitude, String? locationName) {
+  void setLocation(double latitude, double longitude, String? locationName, {double? accuracy}) {
+    if (accuracy != null && accuracy > 0) _meta['gps_accuracy_m'] = double.parse(accuracy.toStringAsFixed(1));
     print('📍 Definindo localização: $latitude, $longitude');
 
     if (_currentForm != null) {
@@ -580,6 +588,7 @@ class FormProvider with ChangeNotifier {
           locationName: locationName,
         );
         print('✅ Localização definida');
+        _saveDraft();
         notifyListeners();
       } catch (e) {
         print('❌ Erro ao definir localização: $e');
@@ -619,6 +628,7 @@ class FormProvider with ChangeNotifier {
       try {
         _currentForm = _currentForm!.copyWith(photoPath: photoPath);
         print('✅ Foto definida');
+        _saveDraft();
         notifyListeners();
       } catch (e) {
         print('❌ Erro ao definir foto: $e');
@@ -653,6 +663,7 @@ class FormProvider with ChangeNotifier {
       try {
         _currentForm = _currentForm!.copyWith(audioPath: audioPath);
         print('✅ Áudio definido');
+        _saveDraft();
         notifyListeners();
       } catch (e) {
         print('❌ Erro ao definir áudio: $e');
@@ -769,6 +780,184 @@ class FormProvider with ChangeNotifier {
       print('❌ Erro ao salvar foto offline: $e');
       print('📋 Stack trace: $stackTrace');
       return null;
+    }
+  }
+
+  // ===========================================================================
+  // Indicadores da entrevista e rascunho no aparelho (Prompts 5, 6, 8 e 13)
+  // ===========================================================================
+
+  final Map<String, dynamic> _meta = {};
+  final Map<int, double> _questionSeconds = {};
+  final Map<String, List<String>> _optionOrders = {};
+  int? _currentQuestionId;
+  DateTime? _questionEnteredAt;
+  int _draftPageIndex = 0;
+  Questionnaire? _draftQuestionnaire;
+
+  Map<String, dynamic> get meta => _meta;
+  int get draftPageIndex => _draftPageIndex;
+
+  /// Questionário da entrevista (para o rascunho e as regras de campo).
+  void setQuestionnaireContext(Questionnaire q) {
+    _draftQuestionnaire = q;
+    if (q.field != null) {
+      if (q.field!['is_test'] == true) _meta['is_test'] = true;
+    }
+    _meta['questionnaire_version'] = q.version;
+  }
+
+  void setMetaValue(String key, dynamic value) {
+    _meta[key] = value;
+    _saveDraft();
+  }
+
+  /// Falha de áudio, foto, GPS ou envio que o entrevistador viu na tela:
+  /// vai junto com a entrevista para o coordenador ver no painel.
+  void addFalha(String falha) {
+    final list = List<String>.from((_meta['falhas'] as List?) ?? const []);
+    if (!list.contains(falha)) list.add(falha);
+    _meta['falhas'] = list;
+    _saveDraft();
+  }
+
+  /// Marca a entrada numa pergunta (tempo gasto em cada pergunta).
+  void enterQuestion(int questionId, {int? pageIndex}) {
+    leaveQuestion();
+    _currentQuestionId = questionId;
+    _questionEnteredAt = DateTime.now();
+    if (pageIndex != null) _draftPageIndex = pageIndex;
+    _saveDraft();
+  }
+
+  void leaveQuestion() {
+    if (_currentQuestionId != null && _questionEnteredAt != null) {
+      final s = DateTime.now().difference(_questionEnteredAt!).inMilliseconds / 1000.0;
+      _questionSeconds[_currentQuestionId!] = (_questionSeconds[_currentQuestionId!] ?? 0) + s;
+    }
+    _currentQuestionId = null;
+    _questionEnteredAt = null;
+  }
+
+  /// Ordem das opções exibida ao entrevistado (rodízio, Prompt 8).
+  void recordOptionOrder(int questionId, List<String> labels) {
+    _optionOrders['$questionId'] = labels;
+  }
+
+  List<String>? optionOrderFor(int questionId) => _optionOrders['$questionId'];
+
+  Map<String, dynamic> _buildMeta() {
+    final m = Map<String, dynamic>.from(_meta);
+    if (_questionSeconds.isNotEmpty) {
+      m['question_times'] = {
+        for (final e in _questionSeconds.entries) '${e.key}': double.parse(e.value.toStringAsFixed(1)),
+      };
+    }
+    if (_optionOrders.isNotEmpty) m['option_orders'] = Map<String, dynamic>.from(_optionOrders);
+    return m;
+  }
+
+  void _resetMeta() {
+    _meta.clear();
+    _questionSeconds.clear();
+    _optionOrders.clear();
+    _currentQuestionId = null;
+    _questionEnteredAt = null;
+    _draftPageIndex = 0;
+  }
+
+  /// Problema de validação da resposta atual: (mensagem, bloqueia?).
+  /// Rígida (min/max/max_length) bloqueia; suave (soft_min/soft_max) pede
+  /// confirmação. Null = resposta aceita.
+  ({String message, bool hard})? validationProblem(Question q) {
+    final value = getResponse(q.id);
+    if (value == null || value.toString().trim().isEmpty) return null;
+    final type = q.questionType.toLowerCase().trim();
+    if (type == 'number') {
+      final v = double.tryParse(value.toString().replaceAll(',', '.'));
+      if (v == null) return (message: 'Digite um número.', hard: true);
+      final min = q.validationNumber('min'), max = q.validationNumber('max');
+      if (min != null && v < min) return (message: 'O valor mínimo aceito é ${_fmtNum(min)}.', hard: true);
+      if (max != null && v > max) return (message: 'O valor máximo aceito é ${_fmtNum(max)}.', hard: true);
+      final smin = q.validationNumber('soft_min'), smax = q.validationNumber('soft_max');
+      if (smin != null && v < smin) return (message: 'O valor ${_fmtNum(v)} está abaixo do esperado (${_fmtNum(smin)}). Confirme com o entrevistado.', hard: false);
+      if (smax != null && v > smax) return (message: 'O valor ${_fmtNum(v)} está acima do esperado (${_fmtNum(smax)}). Confirme com o entrevistado.', hard: false);
+    }
+    if (type == 'text' || type == 'textarea') {
+      final maxLen = q.validationNumber('max_length');
+      if (maxLen != null && value.toString().length > maxLen) {
+        return (message: 'A resposta passou de ${maxLen.toInt()} caracteres.', hard: true);
+      }
+    }
+    return null;
+  }
+
+  static String _fmtNum(double v) => v == v.roundToDouble() ? v.toInt().toString() : v.toString().replaceAll('.', ',');
+
+  /// Guarda a entrevista em andamento no aparelho (criptografada).
+  Future<void> _saveDraft() async {
+    final form = _currentForm;
+    if (form == null || _isEditMode || _draftQuestionnaire == null) return;
+    try {
+      final data = {
+        'saved_at': DateTime.now().toIso8601String(),
+        'questionnaire_id': form.questionnaireId,
+        'questionnaire_title': _draftQuestionnaire!.title,
+        'page_index': _draftPageIndex,
+        'form': form.copyWith(responses: _responses.values.toList(), meta: _buildMeta()).toJson(),
+        'option_orders': _optionOrders,
+      };
+      await InterviewDraftStore.save(form.appliedBy, data);
+    } catch (e) {
+      print('⚠️ Rascunho não salvo: $e');
+    }
+  }
+
+  Future<void> discardDraft(int userId) => InterviewDraftStore.clear(userId);
+
+  /// Retoma uma entrevista guardada: respostas, aceite, indicadores e a pergunta em que parou.
+  bool restoreDraft(Map<String, dynamic> draft, Questionnaire questionnaire) {
+    try {
+      final form = FormResponse.fromJson(Map<String, dynamic>.from(draft['form'] as Map));
+      _resetMeta();
+      _currentForm = form.copyWith(responses: const []);
+      _responses
+        ..clear()
+        ..addEntries(form.responses.map((r) => MapEntry(r.questionId, r)));
+      _meta.addAll(form.meta);
+      final qt = form.meta['question_times'];
+      if (qt is Map) {
+        qt.forEach((k, v) {
+          final id = int.tryParse('$k');
+          if (id != null && v is num) _questionSeconds[id] = v.toDouble();
+        });
+      }
+      final oo = draft['option_orders'];
+      if (oo is Map) {
+        oo.forEach((k, v) {
+          if (v is List) _optionOrders['$k'] = v.map((e) => '$e').toList();
+        });
+      }
+      _meta.remove('question_times');
+      _meta.remove('option_orders');
+      _meta['retomada'] = ((_meta['retomada'] as num?) ?? 0).toInt() + 1;
+      // Áudio de antes da interrupção fica guardado como parte anterior.
+      if (form.audioPath != null && form.audioPath!.isNotEmpty) {
+        final partes = List<String>.from((_meta['audio_partes'] as List?) ?? const []);
+        partes.add(form.audioPath!);
+        _meta['audio_partes'] = partes;
+      }
+      _draftPageIndex = (draft['page_index'] as num?)?.toInt() ?? 0;
+      _draftQuestionnaire = questionnaire;
+      _questions = List<Question>.from(questionnaire.questions)
+        ..sort((a, b) => a.orderIndex.compareTo(b.orderIndex));
+      _initializeQuestionStates();
+      _executeConditionalLogic();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      print('❌ Não foi possível retomar a entrevista: $e');
+      return false;
     }
   }
 
@@ -1055,6 +1244,9 @@ class FormProvider with ChangeNotifier {
       print('   - Iniciado em: ${formToSave.startedAt}');
       print('   - Concluído em: ${formToSave.completedAt}');
 
+      leaveQuestion();
+      formToSave = formToSave.copyWith(meta: _buildMeta());
+
       // 1. SEMPRE salvar localmente primeiro - CRÍTICO!
       print('💾 === SALVANDO LOCALMENTE (OFFLINE FIRST) ===');
       try {
@@ -1143,6 +1335,11 @@ class FormProvider with ChangeNotifier {
       }
 
       */
+
+      if (localSaveSuccess) {
+        // A entrevista está na fila de envio: o rascunho não é mais necessário.
+        await InterviewDraftStore.clear(formToSave.appliedBy);
+      }
 
       // Status final
       print('📊 === SUBMISSÃO CONCLUÍDA ===');
@@ -1539,7 +1736,19 @@ class FormProvider with ChangeNotifier {
     }
   }
 
+  /// Motivo da última falha de envio desta entrevista, para o entrevistador
+  /// ver na lista de pendentes (Prompt 5).
+  Future<void> _rememberError(FormResponse form, String motivo) async {
+    try {
+      final m = Map<String, dynamic>.from(form.meta);
+      m['ultimo_erro'] = motivo;
+      m['ultimo_erro_em'] = DateTime.now().toIso8601String();
+      await LocalStorageService.updateFormResponse(form.copyWith(meta: m));
+    } catch (_) {}
+  }
+
   Future<int> syncPendingForms() async {
+    ErrorReporter.flush();
     print('🔄 === SINCRONIZAÇÃO COMPLETA (FORMULÁRIOS + FOTOS) ===');
     print('🔄 Timestamp: ${DateTime.now()}');
     _lastSyncError = null;
@@ -1708,10 +1917,12 @@ class FormProvider with ChangeNotifier {
             await LocalStorageService.updateFormSyncStatus(form.id!, 'error');
           }
           _lastSyncError = e.message;
+          await _rememberError(form, e.message);
         } catch (e, stackTrace) {
           print('❌ Erro ao sincronizar formulário ${form.id}: $e');
           print('📋 Stack trace: $stackTrace');
           _lastSyncError = e.toString().replaceAll('Exception: ', '');
+          await _rememberError(form, _lastSyncError!);
         }
       }
 

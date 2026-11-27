@@ -49,6 +49,12 @@ class FormResponse {
   final DateTime? editedAt;
   final List<QuestionResponse> responses;
 
+  /// Indicadores da entrevista enviados ao painel (Prompts 5, 6, 8, 13, 20):
+  /// consent_at, consent_text, audio_duration_sec, gps_accuracy_m,
+  /// question_times, option_orders, municipio, is_test, retomada, falhas,
+  /// ultimo_erro (motivo da última falha de envio).
+  final Map<String, dynamic> meta;
+
   /// True quando o painel confirmou a gravação desta coleta.
   bool get isConfirmedByServer => syncStatus == 'synced';
 
@@ -101,6 +107,7 @@ class FormResponse {
     this.completedAt,
     this.editedAt,
     this.responses = const [],
+    this.meta = const {},
   });
 
   // Método copyWith para facilitar atualizações
@@ -125,6 +132,7 @@ class FormResponse {
     DateTime? completedAt,
     DateTime? editedAt,
     List<QuestionResponse>? responses,
+    Map<String, dynamic>? meta,
   }) {
     return FormResponse(
       id: id ?? this.id,
@@ -147,6 +155,7 @@ class FormResponse {
       completedAt: completedAt ?? this.completedAt,
       editedAt: editedAt ?? this.editedAt,
       responses: responses ?? this.responses,
+      meta: meta ?? this.meta,
     );
   }
 
@@ -181,6 +190,7 @@ class FormResponse {
         responses: (json['responses'] as List<dynamic>?)
             ?.map((r) => QuestionResponse.fromJson(r as Map<String, dynamic>))
             .toList() ?? [],
+        meta: json['meta'] is Map ? Map<String, dynamic>.from(json['meta'] as Map) : const {},
       );
     } catch (e, stackTrace) {
       print('❌ Erro ao parsear FormResponse: $e');
@@ -217,6 +227,7 @@ class FormResponse {
         'completed_at': completedAt?.toIso8601String(),
         'edited_at': editedAt?.toIso8601String(),
         'responses': responses.map((r) => r.toJson()).toList(),
+        if (meta.isNotEmpty) 'meta': meta,
       };
     } catch (e, stackTrace) {
       print('❌ Erro ao serializar FormResponse: $e');

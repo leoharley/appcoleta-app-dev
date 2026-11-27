@@ -14,6 +14,7 @@ import 'screens/splash_screen.dart';
 import 'utils/theme.dart';
 import '../providers/question_analysis_provider.dart';
 import 'providers/stratification_provider.dart';
+import 'services/error_reporter.dart';
 
 void main() {
   // Na versão publicada, as mensagens de diagnóstico (print) não vão para o
@@ -40,6 +41,8 @@ void _main() {
 
   // Inicializar configurações conforme a plataforma
   _initializePlatform();
+  ErrorReporter.install();
+  ErrorReporter.flush();
 
   runApp(const AppColetaApp());
 }

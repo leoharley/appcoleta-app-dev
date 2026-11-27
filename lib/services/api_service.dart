@@ -232,6 +232,17 @@ class ApiService {
         );
       }
 
+      // 426: versão do app abaixo da mínima definida pelo gestor (Prompt 20).
+      // Não é permanente: depois de atualizar, o mesmo envio passa.
+      if (response.statusCode == 426 || responseData['update_required'] == true) {
+        throw Exception(msg);
+      }
+
+      // 409: pesquisa encerrada — o servidor não aceita entrevista nova.
+      if (response.statusCode == 409 && responseData['closed'] == true) {
+        throw PermanentSubmitException(msg, statusCode: response.statusCode);
+      }
+
       // 400: JSON malformado gerado pelo app.
       if (response.statusCode == 400 || responseData['json_error'] != null) {
         throw PermanentSubmitException(
